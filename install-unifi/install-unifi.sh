@@ -4,13 +4,11 @@
 # Installs the Uni-Fi controller software on a FreeBSD machine (presumably running pfSense).
 
 # The latest version of UniFi:
-UNIFI_SOFTWARE_URL="https://dl.ui.com/unifi/7.2.92/UniFi.unix.zip"
-
+UNIFI_SOFTWARE_URL="http://dl.ubnt.com/unifi/5.10.25/UniFi.unix.zip"
 
 # The rc script associated with this branch or fork:
-RC_SCRIPT_URL="https://raw.githubusercontent.com/unofficial-unifi/unifi-pfsense/master/rc.d/unifi.sh"
+RC_SCRIPT_URL="https://raw.githubusercontent.com/gozoinks/unifi-pfsense/master/rc.d/unifi.sh"
 
-CURRENT_MONGODB_VERSION=mongodb42
 
 # If pkg-ng is not yet installed, bootstrap it:
 if ! /usr/sbin/pkg -N 2> /dev/null; then
@@ -29,10 +27,10 @@ fi
 ABI=`/usr/sbin/pkg config abi`
 
 # FreeBSD package source:
-FREEBSD_PACKAGE_URL="https://pkg.freebsd.org/${ABI}/latest/"
+FREEBSD_PACKAGE_URL="https://mirrors.xtom.com/freebsd-pkg/${ABI}/latest/All/"
 
 # FreeBSD package list:
-FREEBSD_PACKAGE_LIST_URL="${FREEBSD_PACKAGE_URL}packagesite.pkg"
+FREEBSD_PACKAGE_LIST_URL="https://mirrors.xtom.com/freebsd-pkg/${ABI}/latest/packagesite.txz"
 
 # Stop the controller if it's already running...
 # First let's try the rc script if it exists:
@@ -55,9 +53,6 @@ if [ $(ps ax | grep -c "/usr/local/UniFi/data/[d]b") -ne 0 ]; then
   /bin/kill -15 `ps ax | grep "/usr/local/UniFi/data/[d]b" | awk '{ print $1 }'`
   echo " done."
 fi
-
-# Repairs Mongodb database in case of corruption
-mongod --dbpath /usr/local/UniFi/data/db --repair
 
 # If an installation exists, we'll need to back up configuration:
 if [ -d /usr/local/UniFi/data ]; then
@@ -84,86 +79,69 @@ echo -n "Mounting new filesystems..."
 /sbin/mount -a
 echo " done."
 
-
-echo "Removing discontinued packages..."
-old_mongos=`pkg info | grep mongodb | grep -v ${CURRENT_MONGODB_VERSION}`
-for old_mongo in "${old_mongos}"; do
-  package=`echo "$old_mongo" | cut -d' ' -f1`
-  pkg unlock -yq ${package}
-  env ASSUME_ALWAYS_YES=YES /usr/sbin/pkg delete ${package}
-done
-echo " done."
-
-
-
 # Install mongodb, OpenJDK, and unzip (required to unpack Ubiquiti's download):
 # -F skips a package if it's already installed, without throwing an error.
 echo "Installing required packages..."
+tar xv -C / -f /usr/local/share/pfSense/base.txz ./usr/bin/install
 #uncomment below for pfSense 2.2.x:
 #env ASSUME_ALWAYS_YES=YES /usr/sbin/pkg install mongodb openjdk unzip pcre v8 snappy
 
 fetch ${FREEBSD_PACKAGE_LIST_URL}
-tar vfx packagesite.pkg
+tar vfx packagesite.txz
 
 AddPkg () {
  	pkgname=$1
-        pkg unlock -yq $pkgname
  	pkginfo=`grep "\"name\":\"$pkgname\"" packagesite.yaml`
  	pkgvers=`echo $pkginfo | pcregrep -o1 '"version":"(.*?)"' | head -1`
-	pkgurl="${FREEBSD_PACKAGE_URL}`echo $pkginfo | pcregrep -o1 '"path":"(.*?)"' | head -1`"
 
 	# compare version for update/install
  	if [ `pkg info | grep -c $pkgname-$pkgvers` -eq 1 ]; then
-	     echo "Package $pkgname-$pkgvers already installed."
-	else
-	     env ASSUME_ALWAYS_YES=YES /usr/sbin/pkg add -f "$pkgurl"
+			echo "Package $pkgname-$pkgvers already installed."
+		else
+			env ASSUME_ALWAYS_YES=YES /usr/sbin/pkg add -f ${FREEBSD_PACKAGE_URL}${pkgname}-${pkgvers}.txz
 
-	     # if update openjdk8 then force detele snappyjava to reinstall for new version of openjdk
-	     if [ "$pkgname" == "openjdk8" ]; then
-	          pkg unlock -yq snappyjava
-	          env ASSUME_ALWAYS_YES=YES /usr/sbin/pkg delete snappyjava
-             fi
-        fi
-        pkg lock -yq $pkgname
+			# if update openjdk8 then force detele snappyjava to reinstall for new version of openjdk
+			if [ "$pkgname" == "openjdk8" ]; then
+				env ASSUME_ALWAYS_YES=YES /usr/sbin/pkg delete snappyjava
+			fi
+		fi
 }
 
-#Add the following Packages for installation or reinstallation (if something was removed)
-AddPkg png
+AddPkg snappy
+AddPkg cyrus-sasl
+AddPkg xorgproto
+AddPkg python2
+AddPkg v8
+AddPkg icu
+AddPkg boost-libs
+AddPkg mongodb34
+AddPkg unzip
+AddPkg pcre
+AddPkg alsa-lib
 AddPkg freetype2
 AddPkg fontconfig
-AddPkg alsa-lib
-AddPkg mpdecimal
-AddPkg python37
-AddPkg libfontenc
-AddPkg mkfontscale
-AddPkg dejavu
-AddPkg giflib
-AddPkg xorgproto
 AddPkg libXdmcp
 AddPkg libpthread-stubs
 AddPkg libXau
 AddPkg libxcb
 AddPkg libICE
 AddPkg libSM
+AddPkg java-zoneinfo
 AddPkg libX11
 AddPkg libXfixes
 AddPkg libXext
 AddPkg libXi
 AddPkg libXt
+AddPkg libfontenc
+AddPkg mkfontscale
+AddPkg dejavu
 AddPkg libXtst
 AddPkg libXrender
 AddPkg libinotify
 AddPkg javavmwrapper
-AddPkg java-zoneinfo
+AddPkg giflib
 AddPkg openjdk8
 AddPkg snappyjava
-AddPkg snappy
-AddPkg cyrus-sasl
-AddPkg icu
-AddPkg boost-libs
-AddPkg ${CURRENT_MONGODB_VERSION}
-AddPkg unzip
-AddPkg pcre
 
 # Clean up downloaded package manifest:
 rm packagesite.*
